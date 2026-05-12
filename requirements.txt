@@ -1,0 +1,33 @@
+# Framework
+fastapi==0.115.6
+uvicorn[standard]==0.32.1
+pydantic==2.10.0
+pydantic-settings==2.7.0
+
+# LLM
+langchain==0.3.14
+langchain-google-genai==2.0.8
+
+# Embeddings & Reranking
+langchain-voyageai==0.2.0
+voyageai>=0.3.7
+
+# Vector Store
+qdrant-client==1.12.1
+langchain-qdrant==0.2.0
+
+# PDF
+PyMuPDF==1.25.1
+
+# Semantic Chunking
+numpy>=1.26.0
+
+# Logging
+structlog==24.4.0
+
+# Metrics
+prometheus-client>=0.20.0
+
+# Utilities
+python-dotenv==1.0.1
+python-multipart==0.0.18

@@ -1,0 +1,574 @@
+{
+  "info": {
+    "name": "Session 2 — Precision Chunking & CRAG API",
+    "description": "End-to-end testing guide for Session 2. Follow the folders in order (1→2→3→4→5→6→7) for the full learning experience.\n\nBase URL: http://localhost:8000\nCorpus files: code/research/corpus/",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [{ "key": "base_url", "value": "http://localhost:8000" }],
+  "item": [
+    {
+      "name": "1️⃣ System Health",
+      "description": "Verify all services are running before testing.",
+      "item": [
+        {
+          "name": "1.1 Health Check",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{base_url}}/health" },
+            "description": "Check that the API, Qdrant, and all services are healthy.\n\nExpected: status=healthy, qdrant=true, enrichment_mode=regex"
+          },
+          "event": [{
+            "listen": "test",
+            "script": {
+              "exec": [
+                "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                "pm.test('Service is healthy', () => {",
+                "  const body = pm.response.json();",
+                "  pm.expect(body.status).to.eql('healthy');",
+                "  pm.expect(body.qdrant).to.be.true;",
+                "  pm.expect(body.crag_enabled).to.be.true;",
+                "  pm.expect(body.enrichment_mode).to.eql('regex');",
+                "});"
+              ]
+            }
+          }]
+        },
+        {
+          "name": "1.2 Prometheus Metrics",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{base_url}}/metrics" },
+            "description": "View raw Prometheus metrics.\n\nLook for: rag_requests_total, rag_crag_verdicts_total, rag_query_routing_total"
+          }
+        },
+        {
+          "name": "1.3 Collection Stats (empty)",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{base_url}}/api/v1/stats" },
+            "description": "Should show total_chunks=0 before ingestion."
+          },
+          "event": [{
+            "listen": "test",
+            "script": {
+              "exec": [
+                "pm.test('Collection exists', () => pm.response.to.have.status(200));",
+                "pm.test('Empty before ingestion', () => {",
+                "  const body = pm.response.json();",
+                "  pm.expect(body.total_chunks).to.eql(0);",
+                "});"
+              ]
+            }
+          }]
+        }
+      ]
+    },
+    {
+      "name": "2️⃣ Ingest Corpus (PDF + Markdown)",
+      "description": "Ingest corpus documents. Supports BULK upload (all files at once) or one-by-one.\n\nCorpus files: code/research/corpus/\n• 2310.12815v5.pdf\n• customer_faq.md\n• internal_wiki.md",
+      "item": [
+        {
+          "name": "2.1 ⭐ Bulk Ingest (all 3 files at once)",
+          "request": {
+            "method": "POST",
+            "url": { "raw": "{{base_url}}/api/v1/ingest?enrich=true" },
+            "description": "Upload ALL 3 corpus files in one request.\n\nBody → form-data → key: file, type: File → Select ALL 3 files at once.\n\nThe API processes each file independently — partial failures won't block others.",
+            "body": { "mode": "formdata", "formdata": [{ "key": "file", "type": "file", "src": "" }] }
+          },
+          "event": [{
+            "listen": "test",
+            "script": {
+              "exec": [
+                "pm.test('Bulk ingest success', () => {",
+                "  pm.response.to.have.status(200);",
+                "  const body = pm.response.json();",
+                "  pm.expect(body.status).to.eql('success');",
+                "  pm.expect(body.total_files).to.eql(3);",
+                "  pm.expect(body.total_chunks).to.be.above(100);",
+                "  body.files.forEach(f => {",
+                "    console.log(`${f.filename}: ${f.pages_parsed} pages → ${f.chunks_created} chunks (${f.doc_type})`);",
+                "  });",
+                "  console.log(`Total: ${body.total_files} files, ${body.total_chunks} chunks`);",
+                "});"
+              ]
+            }
+          }]
+        },
+        {
+          "name": "2.2 Single — Academic Paper (PDF)",
+          "request": {
+            "method": "POST",
+            "url": { "raw": "{{base_url}}/api/v1/ingest?enrich=true" },
+            "description": "Upload just the PDF.\n\nBody → form-data → key: file, type: File → select 2310.12815v5.pdf",
+            "body": { "mode": "formdata", "formdata": [{ "key": "file", "type": "file", "src": "" }] }
+          },
+          "event": [{
+            "listen": "test",
+            "script": {
+              "exec": [
+                "pm.test('PDF ingest', () => {",
+                "  const body = pm.response.json();",
+                "  pm.expect(body.files[0].doc_type).to.eql('academic_paper');",
+                "  console.log(`PDF: ${body.files[0].pages_parsed} pages → ${body.files[0].chunks_created} chunks`);",
+                "});"
+              ]
+            }
+          }]
+        },
+        {
+          "name": "2.3 Single — Customer FAQ (Markdown)",
+          "request": {
+            "method": "POST",
+            "url": { "raw": "{{base_url}}/api/v1/ingest?enrich=true" },
+            "description": "Upload just customer_faq.md\n\nBody → form-data → key: file, type: File → select customer_faq.md",
+            "body": { "mode": "formdata", "formdata": [{ "key": "file", "type": "file", "src": "" }] }
+          },
+          "event": [{
+            "listen": "test",
+            "script": {
+              "exec": [
+                "pm.test('FAQ ingest', () => {",
+                "  const body = pm.response.json();",
+                "  pm.expect(body.files[0].doc_type).to.eql('customer_faq');",
+                "  console.log(`FAQ: ${body.files[0].pages_parsed} sections → ${body.files[0].chunks_created} chunks`);",
+                "});"
+              ]
+            }
+          }]
+        },
+        {
+          "name": "2.4 Single — Internal Wiki (Markdown)",
+          "request": {
+            "method": "POST",
+            "url": { "raw": "{{base_url}}/api/v1/ingest?enrich=true" },
+            "description": "Upload just internal_wiki.md\n\nBody → form-data → key: file, type: File → select internal_wiki.md",
+            "body": { "mode": "formdata", "formdata": [{ "key": "file", "type": "file", "src": "" }] }
+          },
+          "event": [{
+            "listen": "test",
+            "script": {
+              "exec": [
+                "pm.test('Wiki ingest', () => {",
+                "  const body = pm.response.json();",
+                "  pm.expect(body.files[0].doc_type).to.eql('internal_wiki');",
+                "  console.log(`Wiki: ${body.files[0].pages_parsed} sections → ${body.files[0].chunks_created} chunks`);",
+                "});"
+              ]
+            }
+          }]
+        },
+        {
+          "name": "2.5 Reject Unsupported File",
+          "request": {
+            "method": "POST",
+            "url": { "raw": "{{base_url}}/api/v1/ingest?enrich=true" },
+            "description": "Upload a .txt file — response status will be 'failed', file error explains why.",
+            "body": { "mode": "formdata", "formdata": [{ "key": "file", "type": "file", "src": "" }] }
+          },
+          "event": [{
+            "listen": "test",
+            "script": {
+              "exec": [
+                "pm.test('Unsupported file rejected', () => {",
+                "  const body = pm.response.json();",
+                "  pm.expect(body.status).to.eql('failed');",
+                "  pm.expect(body.files[0].error).to.include('Unsupported');",
+                "});"
+              ]
+            }
+          }]
+        }
+      ]
+    },
+    {
+      "name": "3️⃣ Verify Enriched Index",
+      "description": "After ingestion, verify that metadata was correctly applied to all chunks.",
+      "item": [
+        {
+          "name": "3.1 Collection Stats (after ingestion)",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{base_url}}/api/v1/stats" },
+            "description": "Should show ~315 total chunks with content_type, audience, and doc_type distributions."
+          },
+          "event": [{
+            "listen": "test",
+            "script": {
+              "exec": [
+                "pm.test('Chunks indexed', () => {",
+                "  const body = pm.response.json();",
+                "  pm.expect(body.total_chunks).to.be.above(100);",
+                "  console.log(`Total chunks: ${body.total_chunks}`);",
+                "  console.log(`Content types: ${JSON.stringify(body.content_type_distribution)}`);",
+                "  console.log(`Audiences: ${JSON.stringify(body.audience_distribution)}`);",
+                "  console.log(`Doc types: ${JSON.stringify(body.doc_type_distribution)}`);",
+                "});"
+              ]
+            }
+          }]
+        }
+      ]
+    },
+    {
+      "name": "4️⃣ Compare Strategies",
+      "description": "The educational core — see how different strategies produce different results on the same input.",
+      "item": [
+        {
+          "name": "4.1 Compare Chunking — Markdown Input",
+          "request": {
+            "method": "POST",
+            "url": { "raw": "{{base_url}}/api/v1/compare/chunking" },
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "description": "Same markdown text through 3 strategies.\n\n🔍 Look at:\n• fixed: cuts mid-sentence\n• recursive: respects paragraphs\n• markdown: splits by ## headers (best for .md)",
+            "body": { "mode": "raw", "raw": "{\n  \"text\": \"## Overview\\nMachine learning is transforming healthcare. Deep learning models can detect diseases from medical images. This has significant implications for early diagnosis and treatment planning.\\n\\n## Methods\\nWe trained a convolutional neural network (CNN) on 10,000 annotated X-ray images. The learning rate was set to 0.001 with a batch size of 32. Training was performed on 4 NVIDIA A100 GPUs over 48 hours.\\n\\n### Data Preprocessing\\nImages were resized to 224x224 pixels, normalized to [0,1] range, and augmented with random rotations and flips to prevent overfitting.\\n\\n### Model Architecture\\nThe model uses a ResNet-50 backbone with a custom classification head. Dropout of 0.3 was applied before the final layer.\\n\\n## Results\\nOur model achieves 95.2% accuracy on the test set, outperforming the baseline (ResNet-18) by 12%. Sensitivity for pneumonia detection was 97.1%.\\n\\n## Conclusion\\nDeep learning shows significant promise for automated medical image analysis. Future work will explore multi-modal inputs.\",\n  \"chunk_size\": 300,\n  \"format\": \"markdown\"\n}" }
+          },
+          "event": [{
+            "listen": "test",
+            "script": {
+              "exec": [
+                "pm.test('All strategies returned', () => {",
+                "  const body = pm.response.json();",
+                "  pm.expect(body.strategies).to.have.property('fixed');",
+                "  pm.expect(body.strategies).to.have.property('recursive');",
+                "  pm.expect(body.strategies).to.have.property('markdown');",
+                "  const s = body.strategies;",
+                "  console.log(`Fixed:     ${s.fixed.chunk_count} chunks, avg ${s.fixed.avg_chars} chars, ${s.fixed.latency_ms}ms`);",
+                "  console.log(`Recursive: ${s.recursive.chunk_count} chunks, avg ${s.recursive.avg_chars} chars, ${s.recursive.latency_ms}ms`);",
+                "  console.log(`Markdown:  ${s.markdown.chunk_count} chunks, avg ${s.markdown.avg_chars} chars, ${s.markdown.latency_ms}ms`);",
+                "  console.log(`Recommendation: ${body.recommendation}`);",
+                "});"
+              ]
+            }
+          }]
+        },
+        {
+          "name": "4.2 Compare Chunking — Plain Text Input",
+          "request": {
+            "method": "POST",
+            "url": { "raw": "{{base_url}}/api/v1/compare/chunking" },
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "description": "Same text but format='text' — markdown strategy falls back to recursive.",
+            "body": { "mode": "raw", "raw": "{\n  \"text\": \"Machine learning is transforming healthcare. Deep learning models can detect diseases from medical images. This has significant implications for early diagnosis. The methodology involves training a CNN on 10,000 X-ray images. We used a learning rate of 0.001 and batch size of 32. Results show 95.2% accuracy on the test set. This outperforms the baseline by 12%. Future work will explore multi-modal inputs and larger datasets for improved generalization.\",\n  \"chunk_size\": 200,\n  \"format\": \"text\"\n}" }
+          }
+        },
+        {
+          "name": "4.3 Compare Enrichment — Technical Text",
+          "request": {
+            "method": "POST",
+            "url": { "raw": "{{base_url}}/api/v1/compare/enrichment" },
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "description": "Compare regex ($0, ~2ms) vs LLM (~$0.004, ~1.4s) enrichment.\n\n🔍 Look at:\n• Speed difference (700x faster for regex)\n• Cost difference ($0 vs $0.004 per chunk)\n• Agreement on content_type and audience",
+            "body": { "mode": "raw", "raw": "{\n  \"text\": \"The methodology involves training a convolutional neural network on 10,000 X-ray images. We used a learning rate of 0.001 and batch size of 32. Results show 95.2% accuracy on the benchmark dataset, outperforming Smith et al (2023) by 12%. Table 1 summarizes the ASV metrics across all defense tiers. The deployment architecture uses a dual-model guard with P50 latency under 200ms.\"\n}" }
+          },
+          "event": [{
+            "listen": "test",
+            "script": {
+              "exec": [
+                "pm.test('Both enrichments returned', () => {",
+                "  const body = pm.response.json();",
+                "  console.log(`Regex:  ${body.regex.content_type} | ${body.regex.audience} | ${body.regex.latency_ms}ms | ${body.regex.cost}`);",
+                "  if (body.llm) {",
+                "    console.log(`LLM:    ${body.llm.content_type} | ${body.llm.audience} | ${body.llm.latency_ms}ms | ${body.llm.cost}`);",
+                "    console.log(`Agreement: content_type=${body.agreement.content_type}, audience=${body.agreement.audience}`);",
+                "  }",
+                "  console.log(`Speed ratio: ${Math.round(body.llm?.latency_ms / body.regex.latency_ms)}x faster for regex`);",
+                "});"
+              ]
+            }
+          }]
+        },
+        {
+          "name": "4.4 Compare Enrichment — FAQ Text",
+          "request": {
+            "method": "POST",
+            "url": { "raw": "{{base_url}}/api/v1/compare/enrichment" },
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "description": "Try a general/FAQ-style text — should detect 'practical' content and 'general' audience.",
+            "body": { "mode": "raw", "raw": "{\n  \"text\": \"How do I protect my chatbot from prompt injection? Here are some simple tips and recommendations. Step 1: Add input validation to filter suspicious patterns. Step 2: Use delimiter-based separation. Step 3: Implement an instruction hierarchy so the AI knows system prompts are trusted.\"\n}" }
+          }
+        },
+        {
+          "name": "4.5 Compare Retrieval Pipelines",
+          "request": {
+            "method": "POST",
+            "url": { "raw": "{{base_url}}/api/v1/compare/retrieval" },
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "description": "Same query through 3 pipelines: naive, routed, CRAG.\n\n🔍 Look at:\n• Naive: searches everything (~350ms)\n• Routed: filters to internal_wiki (~360ms)\n• CRAG: adds self-evaluation (~1.3s, 3.5x slower)\n\n⚠️ Run AFTER ingesting documents.",
+            "body": { "mode": "raw", "raw": "{\n  \"query\": \"What is the P50 latency budget for Tier 0 deployments?\"\n}" }
+          },
+          "event": [{
+            "listen": "test",
+            "script": {
+              "exec": [
+                "pm.test('All 3 pipelines compared', () => {",
+                "  const body = pm.response.json();",
+                "  console.log(`Naive:  ${body.naive.latency_ms}ms | ${body.naive.sources.length} sources`);",
+                "  console.log(`Routed: ${body.routed.latency_ms}ms | audience=${body.routed.audience} → ${body.routed.routed_to}`);",
+                "  console.log(`CRAG:   ${body.crag.latency_ms}ms | verdict=${body.crag.verdict} | corrected=${body.crag.corrected}`);",
+                "  console.log(`Insight: ${body.insight}`);",
+                "});"
+              ]
+            }
+          }]
+        }
+      ]
+    },
+    {
+      "name": "5️⃣ Query Routing Deep Dive",
+      "description": "See exactly how queries get routed based on keyword matching.\n\nThe routing debugger shows:\n• Which keywords matched\n• Score per audience category\n• Where the query would be routed",
+      "item": [
+        {
+          "name": "5.1 Technical → internal_wiki",
+          "request": {
+            "method": "POST",
+            "url": { "raw": "{{base_url}}/api/v1/debug/routing" },
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "description": "Keywords: deploy, tier, latency → technical → internal_wiki",
+            "body": { "mode": "raw", "raw": "{\n  \"query\": \"What is the P50 latency budget for Tier 0 deployments?\"\n}" }
+          },
+          "event": [{
+            "listen": "test",
+            "script": {
+              "exec": [
+                "pm.test('Routes to technical', () => {",
+                "  const body = pm.response.json();",
+                "  pm.expect(body.detected_audience).to.eql('technical');",
+                "  pm.expect(body.routed_to).to.eql('internal_wiki');",
+                "  console.log(`Audience: ${body.detected_audience} (score: ${body.all_scores.technical})`);",
+                "  console.log(`Matches: ${body.keyword_matches.join(', ')}`);",
+                "});"
+              ]
+            }
+          }]
+        },
+        {
+          "name": "5.2 Academic → academic_paper",
+          "request": {
+            "method": "POST",
+            "url": { "raw": "{{base_url}}/api/v1/debug/routing" },
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "description": "Keywords: study, experiment → academic → academic_paper",
+            "body": { "mode": "raw", "raw": "{\n  \"query\": \"What attack methods were evaluated in the study?\"\n}" }
+          },
+          "event": [{
+            "listen": "test",
+            "script": {
+              "exec": [
+                "pm.test('Routes to academic', () => {",
+                "  const body = pm.response.json();",
+                "  pm.expect(body.detected_audience).to.eql('academic');",
+                "  pm.expect(body.routed_to).to.eql('academic_paper');",
+                "});"
+              ]
+            }
+          }]
+        },
+        {
+          "name": "5.3 General → customer_faq",
+          "request": {
+            "method": "POST",
+            "url": { "raw": "{{base_url}}/api/v1/debug/routing" },
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "description": "Keywords: how do i, stop, my → general → customer_faq",
+            "body": { "mode": "raw", "raw": "{\n  \"query\": \"How do I stop hackers from messing with my chatbot?\"\n}" }
+          },
+          "event": [{
+            "listen": "test",
+            "script": {
+              "exec": [
+                "pm.test('Routes to general', () => {",
+                "  const body = pm.response.json();",
+                "  pm.expect(body.detected_audience).to.eql('general');",
+                "  pm.expect(body.routed_to).to.eql('customer_faq');",
+                "});"
+              ]
+            }
+          }]
+        },
+        {
+          "name": "5.4 Cross-Document → No Routing",
+          "request": {
+            "method": "POST",
+            "url": { "raw": "{{base_url}}/api/v1/debug/routing" },
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "description": "No clear audience → searches everything.\nThis is the hardest case for retrieval.",
+            "body": { "mode": "raw", "raw": "{\n  \"query\": \"Compare regex and LLM-based input filtering\"\n}" }
+          },
+          "event": [{
+            "listen": "test",
+            "script": {
+              "exec": [
+                "pm.test('No routing applied', () => {",
+                "  const body = pm.response.json();",
+                "  pm.expect(body.detected_audience).to.be.null;",
+                "  pm.expect(body.routed_to).to.be.null;",
+                "  console.log(`No audience detected → searching ALL documents`);",
+                "  console.log(`Explanation: ${body.explanation}`);",
+                "});"
+              ]
+            }
+          }]
+        }
+      ]
+    },
+    {
+      "name": "6️⃣ Chat — Full RAG Pipeline",
+      "description": "End-to-end RAG queries with routing, CRAG self-evaluation, reranking, and source citations.\n\n⚠️ Run AFTER ingesting all 3 documents.",
+      "item": [
+        {
+          "name": "6.1 General Query → FAQ Sources",
+          "request": {
+            "method": "POST",
+            "url": { "raw": "{{base_url}}/api/v1/chat" },
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "description": "Should route to customer_faq and cite [Source: customer_faq.md]",
+            "body": { "mode": "raw", "raw": "{\n  \"query\": \"How do I stop hackers from messing with my chatbot?\"\n}" }
+          },
+          "event": [{
+            "listen": "test",
+            "script": {
+              "exec": [
+                "pm.test('Routed to FAQ', () => {",
+                "  const body = pm.response.json();",
+                "  pm.expect(body.routed_audience).to.eql('general');",
+                "  console.log(`Verdict: ${body.verdict}`);",
+                "  console.log(`Sources: ${body.sources.map(s => s.source).join(', ')}`);",
+                "  console.log(`Answer: ${body.answer.substring(0, 200)}...`);",
+                "});"
+              ]
+            }
+          }]
+        },
+        {
+          "name": "6.2 Technical Query → Wiki Sources",
+          "request": {
+            "method": "POST",
+            "url": { "raw": "{{base_url}}/api/v1/chat" },
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "description": "Should route to internal_wiki and cite [Source: internal_wiki.md]",
+            "body": { "mode": "raw", "raw": "{\n  \"query\": \"What is the P50 latency budget for Tier 0 deployments?\"\n}" }
+          },
+          "event": [{
+            "listen": "test",
+            "script": {
+              "exec": [
+                "pm.test('Routed to wiki', () => {",
+                "  const body = pm.response.json();",
+                "  pm.expect(body.routed_audience).to.eql('technical');",
+                "  console.log(`Verdict: ${body.verdict}`);",
+                "  console.log(`Sources: ${body.sources.map(s => s.source).join(', ')}`);",
+                "});"
+              ]
+            }
+          }]
+        },
+        {
+          "name": "6.3 Academic Query → Paper Sources",
+          "request": {
+            "method": "POST",
+            "url": { "raw": "{{base_url}}/api/v1/chat" },
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "description": "Should route to academic_paper and cite [Source: 2310.12815v5.pdf]",
+            "body": { "mode": "raw", "raw": "{\n  \"query\": \"What attack success values were reported in the research paper?\"\n}" }
+          },
+          "event": [{
+            "listen": "test",
+            "script": {
+              "exec": [
+                "pm.test('Routed to paper', () => {",
+                "  const body = pm.response.json();",
+                "  pm.expect(body.routed_audience).to.eql('academic');",
+                "  console.log(`Verdict: ${body.verdict}`);",
+                "  console.log(`Sources: ${body.sources.map(s => s.source).join(', ')}`);",
+                "});"
+              ]
+            }
+          }]
+        },
+        {
+          "name": "6.4 Filtered Query (methodology only)",
+          "request": {
+            "method": "POST",
+            "url": { "raw": "{{base_url}}/api/v1/chat" },
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "description": "Explicit content_type_filter bypasses audience routing.\nOnly retrieves chunks tagged as 'methodology'.",
+            "body": { "mode": "raw", "raw": "{\n  \"query\": \"What methodology is used?\",\n  \"content_type_filter\": \"methodology\"\n}" }
+          }
+        },
+        {
+          "name": "6.5 Cross-Document Query (no routing)",
+          "request": {
+            "method": "POST",
+            "url": { "raw": "{{base_url}}/api/v1/chat" },
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "description": "No clear audience → searches ALL documents.\nMay pull sources from multiple doc types.",
+            "body": { "mode": "raw", "raw": "{\n  \"query\": \"Compare the sandwich defense pattern across different document types\"\n}" }
+          }
+        },
+        {
+          "name": "6.6 Unrelated Query → CRAG INCORRECT",
+          "request": {
+            "method": "POST",
+            "url": { "raw": "{{base_url}}/api/v1/chat" },
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "description": "This query has nothing to do with the corpus.\nCRAG should detect this and return verdict=INCORRECT.",
+            "body": { "mode": "raw", "raw": "{\n  \"query\": \"What is the stock price of Apple in 2025?\"\n}" }
+          },
+          "event": [{
+            "listen": "test",
+            "script": {
+              "exec": [
+                "pm.test('CRAG detected irrelevant query', () => {",
+                "  const body = pm.response.json();",
+                "  console.log(`Verdict: ${body.verdict}`);",
+                "  console.log(`Answer: ${body.answer}`);",
+                "  // CRAG should catch this as INCORRECT or AMBIGUOUS",
+                "});"
+              ]
+            }
+          }]
+        },
+        {
+          "name": "6.7 Validation Error (too short)",
+          "request": {
+            "method": "POST",
+            "url": { "raw": "{{base_url}}/api/v1/chat" },
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "description": "Query must be >= 3 chars. Should return 422.",
+            "body": { "mode": "raw", "raw": "{\n  \"query\": \"ab\"\n}" }
+          },
+          "event": [{
+            "listen": "test",
+            "script": {
+              "exec": [
+                "pm.test('Validation error', () => pm.response.to.have.status(422));"
+              ]
+            }
+          }]
+        }
+      ]
+    },
+    {
+      "name": "7️⃣ Final — Metrics & Grafana",
+      "description": "After running all tests, check metrics and open Grafana.\n\nGrafana: http://localhost:3000 (admin/admin)",
+      "item": [
+        {
+          "name": "7.1 Prometheus Metrics (after tests)",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{base_url}}/metrics" },
+            "description": "Check accumulated metrics:\n• rag_crag_verdicts_total — CORRECT vs INCORRECT counts\n• rag_query_routing_total — technical, academic, general, null counts\n• rag_enrichment_duration_seconds — regex vs LLM latency"
+          }
+        },
+        {
+          "name": "7.2 Health (final check)",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{base_url}}/health" },
+            "description": "Final health check — confirm everything still healthy after load."
+          }
+        }
+      ]
+    }
+  ]
+}

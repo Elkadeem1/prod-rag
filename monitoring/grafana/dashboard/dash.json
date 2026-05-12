@@ -1,0 +1,139 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "title": "Request Rate (req/s)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "targets": [
+        {
+          "expr": "rate(rag_requests_total[1m])",
+          "legendFormat": "{{endpoint}} ({{status}})",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 20 }
+        }
+      }
+    },
+    {
+      "title": "Request Latency (p95)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, rate(rag_request_duration_seconds_bucket[5m]))",
+          "legendFormat": "{{endpoint}} p95",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 10 }
+        }
+      }
+    },
+    {
+      "title": "CRAG Verdict Distribution",
+      "type": "piechart",
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 8 },
+      "targets": [
+        {
+          "expr": "rag_crag_verdicts_total",
+          "legendFormat": "{{verdict}}",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "pieType": "donut",
+        "legend": { "displayMode": "table", "placement": "right" }
+      }
+    },
+    {
+      "title": "Query Routing Distribution",
+      "type": "piechart",
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 8 },
+      "targets": [
+        {
+          "expr": "rag_query_routing_total",
+          "legendFormat": "{{audience}}",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "pieType": "donut",
+        "legend": { "displayMode": "table", "placement": "right" }
+      }
+    },
+    {
+      "title": "Chunks Created by Strategy",
+      "type": "bargauge",
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 8 },
+      "targets": [
+        {
+          "expr": "rag_chunks_created_total",
+          "legendFormat": "{{strategy}}",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "orientation": "horizontal",
+        "displayMode": "gradient"
+      }
+    },
+    {
+      "title": "Enrichment Latency — Regex vs LLM",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, rate(rag_enrichment_duration_seconds_bucket[5m]))",
+          "legendFormat": "{{mode}} p95",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": { "drawStyle": "bars", "lineWidth": 1, "fillOpacity": 50 }
+        }
+      }
+    },
+    {
+      "title": "Chunking Latency by Strategy",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, rate(rag_chunking_duration_seconds_bucket[5m]))",
+          "legendFormat": "{{strategy}} p95",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": { "drawStyle": "bars", "lineWidth": 1, "fillOpacity": 50 }
+        }
+      }
+    }
+  ],
+  "schemaVersion": 39,
+  "tags": ["rag", "session-2"],
+  "templating": { "list": [] },
+  "time": { "from": "now-30m", "to": "now" },
+  "title": "Session 2 — RAG Pipeline Observability",
+  "uid": "session2-rag-pipeline"
+}
